@@ -13,31 +13,35 @@ log_message() {
 
 echo "=== SETTING UP ENVIRONMENT ==="
 export HOME="/tmp"
-echo "HOME set to: $HOME"
+export XDG_CONFIG_HOME="/tmp/.config"
+export XDG_CACHE_HOME="/tmp/.cache"
+export XDG_DATA_HOME="/tmp/.local/share"
+export DCONF_PROFILE="/tmp/.config/dconf"
 
 echo "=== CREATING DIRECTORIES ==="
-mkdir -p /tmp/.config
+mkdir -p /tmp/.config/dconf
 mkdir -p /tmp/.cache
+mkdir -p /tmp/.local/share
 mkdir -p /tmp/LibreOffice_Conversion
+chmod -R 777 /tmp/.config
+chmod -R 777 /tmp/.cache
+chmod -R 777 /tmp/.local
+chmod -R 777 /tmp/LibreOffice_Conversion
 echo "Directories created in /tmp"
 
 echo "=== LOCATING LIBREOFFICE ==="
 # Define possible LibreOffice paths
 POSSIBLE_PATHS=(
-    "/opt/libreoffice24.8/program/soffice",
-    "/opt/libreoffice*/program/soffice"
-    "/usr/lib64/libreoffice/program/soffice"
     "/usr/bin/libreoffice"
     "/usr/bin/soffice"
+    "/usr/lib/libreoffice/program/soffice"
 )
 
 # Find the first working LibreOffice path
 LIBREOFFICE_PATH=""
 for path in "${POSSIBLE_PATHS[@]}"; do
-    # Use ls to expand wildcards if present
-    expanded_path=$(ls $path 2>/dev/null || true)
-    if [ ! -z "$expanded_path" ] && [ -x "$expanded_path" ]; then
-        LIBREOFFICE_PATH="$expanded_path"
+    if [ -x "$path" ]; then
+        LIBREOFFICE_PATH="$path"
         break
     fi
 done
@@ -69,28 +73,9 @@ LIBREOFFICE_PID=$!
 echo "LibreOffice started with PID: $LIBREOFFICE_PID"
 
 echo "=== WAITING FOR LIBREOFFICE ==="
-sleep 5
+sleep 3
 
-# echo "=== CHECKING LIBREOFFICE PROCESS ==="
-# if ! kill -0 $LIBREOFFICE_PID 2>/dev/null; then
-#     echo "ERROR: LibreOffice failed to start"
-#     echo "=== LIBREOFFICE LOG ==="
-#     cat /tmp/libreoffice.log
-#     echo "=== SYSTEM MEMORY ==="
-#     cat /proc/meminfo || echo "Memory info not available"
-#     echo "=== PROCESS LIST ==="
-#     ps aux || ps -ef || echo "Process list not available"
-#     exit 1
-# fi
-
-# echo "LibreOffice process verified running"
-
-# echo "=== SETTING UP PYTHON ENVIRONMENT ==="
-# export PYTHONPATH="${LAMBDA_TASK_ROOT}:${PYTHONPATH}"
-# echo "Updated PYTHONPATH: $PYTHONPATH"
-
-# echo "=== STARTING LAMBDA HANDLER ==="
-# echo "Lambda handler argument: $1"
+echo "=== STARTING LAMBDA HANDLER ==="
 exec python3 -m awslambdaric $1
 
 echo "=== BOOTSTRAP END ==="

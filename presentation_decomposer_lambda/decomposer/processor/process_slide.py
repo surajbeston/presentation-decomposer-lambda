@@ -4,8 +4,10 @@ import uuid
 import tempfile
 import logging
 import requests
+import base64
+
 from .decompose import PresentationDecomposer
-from .validators import SlideData
+from .validators import SlideStructure
 
 
 logger = logging.getLogger(__name__)
@@ -21,31 +23,28 @@ def handler(event, context):
 
         presentation = data["presentation"]
 
-        response = requests.get(presentation)
-        response.raise_for_status()
-        presentation = response.content
 
         # Generate unique filename
         unique_filename = f"{uuid.uuid4()}.pptx"
         file_path = os.path.join(tempfile.gettempdir(), unique_filename)
         
-        # Write presentation content to temporary path
+        presentation_bytes = base64.b64decode(presentation)
         with open(file_path, 'wb') as f:
-            f.write(presentation)
+            f.write(presentation_bytes)
 
         decomposer_obj = PresentationDecomposer()
         
         logger.info(f"Uploaded file saved to {file_path}")
         result_json = decomposer_obj.process_presentation(file_path)
-        result_dict = json.loads(result_json)
-        validated_data = SlideData(**result_dict)
+        # result_dict = json.loads(result_json)
+        # validated_data = SlideStructure(**result_dict)
         return {
             "statusCode": 200,
             "headers": {
                 "Content-Type": "application/json",
                 "Access-Control-Allow-Origin": "*"
             },
-            "body": json.dumps(validated_data.dict())
+            "body": result_json
         }
     except Exception as e:
         logger.error(f"Error processing presentation: {str(e)}")

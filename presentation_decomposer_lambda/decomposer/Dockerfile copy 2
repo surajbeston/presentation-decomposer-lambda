@@ -1,0 +1,58 @@
+FROM ubuntu:22.04
+
+# Avoid prompts from apt
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Set the working directory in the container
+WORKDIR /var/task
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    python3 \
+    python3-pip \
+    libreoffice \
+    libreoffice-script-provider-python \
+    python3-uno \
+    poppler-utils \
+    wget \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set PYTHONPATH to include LibreOffice Python path
+ENV PYTHONPATH="/usr/lib/python3/dist-packages"
+
+# Install awslambdaric and other Python dependencies
+COPY requirements.txt .
+RUN pip3 install --no-cache-dir -r requirements.txt
+RUN pip3 install --no-cache-dir awslambdaric
+
+# Remove any conflicting uno package
+RUN pip3 uninstall -y uno || true
+
+# Create necessary directories with proper permissions
+RUN mkdir -p /tmp/.config && \
+    mkdir -p /tmp/.cache && \
+    mkdir -p /tmp/LibreOffice_Conversion && \
+    chmod 777 /tmp/.config && \
+    chmod 777 /tmp/.cache && \
+    chmod 777 /tmp/LibreOffice_Conversion
+
+# Copy the application code
+COPY . .
+
+# Create decomposer directory if it doesn't exist
+RUN mkdir -p decomposer && \
+    touch decomposer/__init__.py
+
+# Copy and set permissions for bootstrap script
+COPY bootstrap.sh /var/runtime/bootstrap
+RUN chmod +x /var/runtime/bootstrap
+
+# Set environment variables
+ENV HOME="/tmp"
+ENV LAMBDA_TASK_ROOT="/var/task"
+ENV LD_LIBRARY_PATH="/usr/lib/x86_64-linux-gnu"
+
+# Set the Lambda handler
+ENTRYPOINT ["/var/runtime/bootstrap"]
+CMD ["processor.process_slide.handler"]
+

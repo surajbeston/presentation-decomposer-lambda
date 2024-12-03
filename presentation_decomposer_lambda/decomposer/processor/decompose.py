@@ -4,6 +4,7 @@ import boto3
 import logging
 import time
 import io
+import base64
 import concurrent.futures
 from .presentation_decomposer import PresentationProcessor, CustomEncoder
 from pptx import Presentation
@@ -23,8 +24,7 @@ class PresentationDecomposer:
             region_name=os.environ.get('AWS_REGION', 'us-east-1')
         )
 
-    def upload_file(self, image_bytes, s3_key):
-        import base64
+    def file_to_bytes(self, image_bytes, s3_key):
         if isinstance(image_bytes, io.BytesIO):
             # Get the bytes content from BytesIO object
             image_bytes = image_bytes.getvalue()
@@ -56,7 +56,7 @@ class PresentationDecomposer:
             for shape_name, image_bytes in slide_data.get("images", {}).items():
                 if image_bytes is not None:
                     s3_key = f"processed/{os.path.basename(pptx_file)}/slide_{slide_index}/{shape_name}.png"
-                    public_url = self.upload_file(image_bytes, s3_key)
+                    public_url = self.file_to_bytes(image_bytes, s3_key)
                     if public_url:
                         shapes[shape_name] = public_url
 
@@ -64,51 +64,18 @@ class PresentationDecomposer:
             background_url = None
             if slide_data.get("background"):
                 background_s3_key = f"processed/{os.path.basename(pptx_file)}/slide_{slide_index}/background.png"
-                background_url = self.upload_file(slide_data["background"], background_s3_key)
+                background_url = self.file_to_bytes(slide_data["background"], background_s3_key)
 
             slide_structure = {
                 "index": slide_index,
                 "shapes": shapes,
                 "structure": slide_data.get("structure", {}),
-                "thumbnail": self.upload_file(slide_data.get("thumbnail"), f"processed/{os.path.basename(pptx_file)}/slide_{slide_index}/thumbnail.png"),
+                "thumbnail": self.file_to_bytes(slide_data.get("thumbnail"), f"processed/{os.path.basename(pptx_file)}/slide_{slide_index}/thumbnail.png"),
                 "background": background_url,
                 "frame_size": slide_data.get("frame_size")  # Add this line
             }
 
-            slides.append(slide_structure)
-
-            result = {
-                "status": "processing",
-                "progress": (slide_index + 1) / total_slides * 100,
-                "total_slides": total_slides,
-                "processed_slides": slide_index + 1,
-                "current_slide": slide_structure,
-                "slides": slides,  # Include all processed slides so far
-                "time_elapsed": current_time - start_time,
-                "time_to_first_slide": first_slide_time
-            }
-
-            return json.dumps({"result": result}, cls=CustomEncoder)
-
-        end_time = time.time()
-        total_time = end_time - start_time
-
-        # Final yield with complete status and all slides
-        result =  json.dumps({
-            "result": {
-                "status": "complete",
-                "total_slides": total_slides,
-                "slides": slides,
-                "total_processing_time": total_time,
-                "time_to_first_slide": first_slide_time
-            }
-        }, cls=CustomEncoder)
-        with open("slides_data.json", "w") as f:
-            f.write(result)
-        
-        logging.info(f"Finished processing presentation: {pptx_file}")
-        logging.info(f"Total processing time: {total_time:.2f} seconds")
-        logging.info(f"Time to first slide: {first_slide_time:.2f} seconds")
+            return json.dumps(slide_structure, cls=CustomEncoder)
 
     def process_single_slide(self, pptx_file, slide_index):
         start_time = time.time()
@@ -129,7 +96,7 @@ class PresentationDecomposer:
             for shape_name, image_bytes in slide_data['images'].items():
                 if image_bytes is not None:
                     s3_key = f"processed/{os.path.basename(pptx_file)}/slide_{slide_index}/{shape_name}.png"
-                    task = executor.submit(self.upload_file, image_bytes, s3_key)
+                    task = executor.submit(self.file_to_bytes, image_bytes, s3_key)
                     upload_tasks.append((shape_name, task))
 
             for shape_name, task in upload_tasks:
