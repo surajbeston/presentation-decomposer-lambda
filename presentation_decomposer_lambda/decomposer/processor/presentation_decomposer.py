@@ -69,7 +69,7 @@ class PresentationProcessor:
         logger.info(f"Renaming shapes took {t2 - t1:.2f} seconds")
         return pptx_file
 
-    def process_presentation(self, pptx_file):
+    def process_presentation(self, pptx_file, slide_index):
         document = self.open_presentation(pptx_file)
         pptx = Presentation(pptx_file)
         
@@ -77,24 +77,19 @@ class PresentationProcessor:
         self.frame_width = self.emu_to_pixels(pptx.slide_width)
         self.frame_height = self.emu_to_pixels(pptx.slide_height)
         
-        slides = document.getDrawPages()
-        total_slides = slides.getCount()
-
         shape_counter = 1  # Global shape counter
 
-        for slide_index in range(total_slides):
-            slide_data = self.process_slide(document, pptx, slide_index, shape_counter)
-            shape_counter = slide_data['next_shape_counter']  # Update the global counter
-            
-            # Add frame size to slide_data
-            slide_data['frame_size'] = {
-                'width': self.frame_width,
-                'height': self.frame_height
-            }
-            
-            yield slide_data
-
+        slide_data = self.process_slide(document, pptx, slide_index, shape_counter)
+        shape_counter = slide_data['next_shape_counter']  # Update the global counter
+        
+        # Add frame size to slide_data
+        slide_data['frame_size'] = {
+            'width': self.frame_width,
+            'height': self.frame_height
+        }
         document.close(True)
+        
+        return slide_data
 
     def process_slide(self, document, pptx, slide_index, shape_counter):
         slide = document.getDrawPages().getByIndex(slide_index)

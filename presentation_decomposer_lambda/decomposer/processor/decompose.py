@@ -24,58 +24,55 @@ class PresentationDecomposer:
             region_name=os.environ.get('AWS_REGION', 'us-east-1')
         )
 
-    def file_to_bytes(self, image_bytes, s3_key):
-        if isinstance(image_bytes, io.BytesIO):
-            # Get the bytes content from BytesIO object
-            image_bytes = image_bytes.getvalue()
-        return base64.b64encode(image_bytes).decode('utf-8')
+    def upload_file(self, image_bytes, s3_key):
+        if image_bytes is None:
+            logging.warning(f"Skipping upload for {s3_key}: No image data")
+            return None
+        try:
+            self.s3_client.put_object(Bucket=self.bucket_name, Key=s3_key, Body=image_bytes, ContentType='image/png')
+            return f"https://{self.bucket_name}.s3.amazonaws.com/{s3_key}"
+        except Exception as e:
+            logging.error(f"Error uploading file {s3_key}: {str(e)}")
+            return None
 
-    def process_presentation(self, pptx_file):
+    def process_presentation(self, pptx_file, slide_index):
         logging.info(f"Starting to process presentation: {pptx_file}")
-        
-        start_time = time.time()
+
         total_slides = len(Presentation(pptx_file).slides)
-        slides = []
-        first_slide_time = None
+        if slide_index >= total_slides:
+            raise ValueError(f"Slide index {slide_index} is out of bounds for the total number of slides in the presentation: {total_slides}")
         
-        for slide_index, slide_data in enumerate(self.processor.process_presentation(pptx_file)):
-            current_time = time.time()
-            if slide_index == 0:
-                first_slide_time = current_time - start_time
-                logging.info(f"Time to first slide: {first_slide_time:.2f} seconds")
-
-            logging.info(f"Processing slide {slide_index + 1} of {total_slides}")
+        slide_data = self.processor.process_presentation(pptx_file, slide_index)
+        print(slide_data)
+        # Ensure slide_data is a dictionary
+        if not isinstance(slide_data, dict):
+            logging.error(f"Unexpected data type for slide_data: {type(slide_data)}")
             
-            # Ensure slide_data is a dictionary
-            if not isinstance(slide_data, dict):
-                logging.error(f"Unexpected data type for slide_data: {type(slide_data)}")
-                continue
 
-            # Process and upload shape images
-            shapes = {}
-            for shape_name, image_bytes in slide_data.get("images", {}).items():
-                if image_bytes is not None:
-                    s3_key = f"processed/{os.path.basename(pptx_file)}/slide_{slide_index}/{shape_name}.png"
-                    public_url = self.file_to_bytes(image_bytes, s3_key)
-                    if public_url:
-                        shapes[shape_name] = public_url
+        # Process and upload shape images
+        shapes = {}
+        for shape_name, image_bytes in slide_data.get("images", {}).items():
+            if image_bytes is not None:
+                s3_key = f"processed/{os.path.basename(pptx_file)}/slide_{slide_index}/{shape_name}.png"
+                public_url = self.upload_file(image_bytes, s3_key)
+                if public_url:
+                    shapes[shape_name] = public_url
+        # Upload background image
+        background_url = None
+        if slide_data.get("background"):
+            background_s3_key = f"processed/{os.path.basename(pptx_file)}/slide_{slide_index}/background.png"
+            background_url = self.upload_file(slide_data["background"], background_s3_key)
 
-            # Upload background image
-            background_url = None
-            if slide_data.get("background"):
-                background_s3_key = f"processed/{os.path.basename(pptx_file)}/slide_{slide_index}/background.png"
-                background_url = self.file_to_bytes(slide_data["background"], background_s3_key)
+        slide_structure = {
+            "index": slide_index,
+            "shapes": shapes,
+            "structure": slide_data.get("structure", {}),
+            "thumbnail": self.upload_file(slide_data.get("thumbnail"), f"processed/{os.path.basename(pptx_file)}/slide_{slide_index}/thumbnail.png"),
+            "background": background_url,
+            "frame_size": slide_data.get("frame_size")  # Add this line
+        }
 
-            slide_structure = {
-                "index": slide_index,
-                "shapes": shapes,
-                "structure": slide_data.get("structure", {}),
-                "thumbnail": self.file_to_bytes(slide_data.get("thumbnail"), f"processed/{os.path.basename(pptx_file)}/slide_{slide_index}/thumbnail.png"),
-                "background": background_url,
-                "frame_size": slide_data.get("frame_size")  # Add this line
-            }
-
-            return json.dumps(slide_structure, cls=CustomEncoder)
+        return json.dumps(slide_structure, cls=CustomEncoder)
 
     def process_single_slide(self, pptx_file, slide_index):
         start_time = time.time()
@@ -96,7 +93,7 @@ class PresentationDecomposer:
             for shape_name, image_bytes in slide_data['images'].items():
                 if image_bytes is not None:
                     s3_key = f"processed/{os.path.basename(pptx_file)}/slide_{slide_index}/{shape_name}.png"
-                    task = executor.submit(self.file_to_bytes, image_bytes, s3_key)
+                    task = executor.submit(self.upload_file, image_bytes, s3_key)
                     upload_tasks.append((shape_name, task))
 
             for shape_name, task in upload_tasks:

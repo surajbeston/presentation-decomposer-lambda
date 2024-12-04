@@ -14,7 +14,7 @@ echo "=== STARTING LIBREOFFICE ==="
 # Start LibreOffice in headless mode
 /usr/bin/libreoffice --headless --accept="socket,host=127.0.0.1,port=2002;urp;" --norestore --nologo --nofirststartwizard --impress --nodefault &
 
-sleep 5
+sleep 6
 
 echo "=== LIBREOFFICE STARTED ==="
 

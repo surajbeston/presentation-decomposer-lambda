@@ -15,27 +15,28 @@ logger = logging.getLogger(__name__)
 
 def handler(event, context):
     try:
-        # Handle both direct Lambda invocations and API Gateway events
         if isinstance(event.get('body'), str):
             data = json.loads(event['body'])
         else:
             data = event.get('body', {})
 
         presentation = data["presentation"]
+        index = data["index"]
 
-
-        # Generate unique filename
+        
         unique_filename = f"{uuid.uuid4()}.pptx"
-        file_path = os.path.join(tempfile.gettempdir(), unique_filename)
-        
-        presentation_bytes = base64.b64decode(presentation)
-        with open(file_path, 'wb') as f:
-            f.write(presentation_bytes)
+        file_path = os.path.join("/tmp", unique_filename)
 
-        decomposer_obj = PresentationDecomposer()
+        response = requests.get(presentation)
+        response.raise_for_status()  # Raise an exception for bad status codes
         
+        with open(file_path, 'wb') as f:
+            f.write(response.content)
+        
+        decomposer_obj = PresentationDecomposer()
+
         logger.info(f"Uploaded file saved to {file_path}")
-        result_json = decomposer_obj.process_presentation(file_path)
+        result_json = decomposer_obj.process_presentation(file_path, index)
         # result_dict = json.loads(result_json)
         # validated_data = SlideStructure(**result_dict)
         return {
@@ -47,6 +48,8 @@ def handler(event, context):
             "body": result_json
         }
     except Exception as e:
+        import traceback
+        logger.error(f"Stack trace: {''.join(traceback.format_tb(e.__traceback__))}")
         logger.error(f"Error processing presentation: {str(e)}")
         return {
             "statusCode": 500,
@@ -59,5 +62,7 @@ def handler(event, context):
 
 
 if __name__ == "__main__":
-    data = handler({"body": json.dumps({"presentation": "https://pub-7c765f3726084c52bcd5d180d51f1255.r2.dev/Your%20big%20idea.pptx"}), "context": {}}, {})
+    data = handler({"body": json.dumps({
+        "index": 0,
+        "presentation": "https://pub-7c765f3726084c52bcd5d180d51f1255.r2.dev/Your%20big%20idea.pptx"}), "context": {}}, {})
     print(data)
